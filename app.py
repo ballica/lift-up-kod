@@ -6,7 +6,7 @@ from analysis import Analyzer
 from data_loader import DataLoader
 import os
 
-# Sayfa Ayarları (En başta olmalı)
+# Sayfa Ayarları (En başta olmalı) ahmet 
 st.set_page_config(
     page_title=Config.PAGE_TITLE,
     page_icon=Config.PAGE_ICON,
