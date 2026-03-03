@@ -5,3 +5,4 @@ langchain-text-splitters
 python-dotenv
 chromadb
 groq
+sentence-transformers
