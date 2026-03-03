@@ -1,0 +1,7 @@
+streamlit
+pandas
+python-docx
+langchain-text-splitters
+python-dotenv
+chromadb
+groq
