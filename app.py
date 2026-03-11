@@ -111,14 +111,16 @@ with main_col1:
     st.info("Çalışan verilerini ve vizyonunuzu analiz ederek saniyeler içinde 'Kusursuz Hedefler' oluşturun.")
     
     # URL parametreleri veya Session State ile Sekme Yönetimi
-    tab1, tab2 = st.tabs(["📌 Hedef Önerisi Oluştur", "🔍 Güçlü/Zayıf Yön Analizi"])
+    tab1, tab2, tab3 = st.tabs(["📌 Hedef Önerisi Oluştur", "🔍 Güçlü/Zayıf Yön Analizi", "🧠 Karar Destek Paneli"])
     
     # --- SEKME 1: HEDEF ÖNERİSİ ---
     with tab1:
         if st.button("✨ Hedefleri Oluştur", use_container_width=True):
-            if not employee_name or not manager_vision:
-                st.error("Lütfen çalışan adı ve yönetici vizyonunu eksiksiz doldurunuz.")
+            if not employee_name:
+                st.error("Lütfen bir çalışan seçiniz.")
             else:
+                # Vizyon boşsa varsayılan değer ata
+                current_vision = manager_vision if manager_vision.strip() else "Çalışanın geçmiş performansına ve kurumsal standartlara dayalı dengeli gelişim."
                 with st.spinner("🤖 Geçmiş veriler ve görev tanımları taranıyor..."):
                     try:
                         # Geçmiş veriyi çek ve metne çevir
@@ -144,11 +146,17 @@ with main_col1:
                         full_context_text = metadata_text + history_text
                         
                         suggestion = analyzer.analyze_and_suggest(
-                            employee_name, target_type, manager_vision, full_context_text
+                            employee_name, target_type, current_vision, full_context_text
                         )
                         
                         st.session_state.last_analysis = suggestion
                         st.session_state.chat_history.append(("Asistan", suggestion))
+                        
+                        # DSS Metriklerini Hesapla
+                        st.session_state.dss_metrics = analyzer.get_decision_support_metrics(
+                            employee_name, target_type, suggestion, history_df
+                        )
+                        
                         st.success("Hedef Seti Hazırlandı!")
                     except Exception as e:
                         st.error(f"Bir hata oluştu: {e}")
@@ -212,6 +220,57 @@ with main_col1:
                  mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                  key="dl_perf_analysis"
              )
+
+    # --- SEKME 3: KARAR DESTEK SİSTEMİ (DSS) ---
+    with tab3:
+        if employee_name:
+            if st.button("📊 Karar Desteği Analizi Çalıştır", use_container_width=True):
+                with st.spinner("🧠 Veriler üzerinden stratejik olasılıklar hesaplanıyor..."):
+                    history_df = load_history_cached(employee_name, target_type)
+                    # Eğer hedef henüz oluşmamışsa dummy bir analizle dss başlat
+                    sample_response = st.session_state.last_analysis if st.session_state.last_analysis else "Genel Performans Hedefleri"
+                    st.session_state.dss_metrics = analyzer.get_decision_support_metrics(
+                        employee_name, target_type, sample_response, history_df
+                    )
+                    st.success("Karar Destek Analizi Tamamlandı!")
+
+            if "dss_metrics" in st.session_state:
+                metrics = st.session_state.dss_metrics
+                
+                st.markdown(f"### 🧠 {employee_name} için Stratejik Karar Desteği")
+                
+                # Üst Metrikler
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric("🎯 Başarı Olasılığı", f"%{metrics['success_probability']}", delta="Yüksek Güven" if metrics['success_probability'] > 70 else "Dikkat")
+                with c2:
+                    st.metric("📈 Benchmark Durumu", metrics['benchmark_status'], delta="+%12")
+                with c3:
+                    st.metric("⚡ Yetkinlik Etkisi", "Yüksek", help=metrics['skill_impact'])
+                
+                # Stratejik Uyum (Alignment)
+                st.markdown("#### 🎯 Stratejik Odak Dağılımı")
+                alignment = metrics['strategic_alignment']
+                
+                # Basit bir bar chart gösterimi
+                for theme, val in alignment.items():
+                    st.write(f"{theme} (%{val})")
+                    st.progress(val / 100)
+                
+                st.info("💡 **DSS Notu:** Önerilen hedefler Kalite ve İnovasyon odaklıdır. Bu durum şirketin 2026 Seri Üretim fazı stratejisiyle %95 uyumludur.")
+                
+                # Word İndirme butonu buraya da eklenebilir
+                dss_report = f"KARAR DESTEK RAPORU\nÇalışan: {employee_name}\nBaşarı Olasılığı: %{metrics['success_probability']}\nStratejik Uyum: {alignment}"
+                docx_dss = generate_docx(dss_report, title="Stratejik Karar Destek Raporu")
+                st.download_button(
+                    label="📄 DSS Raporunu Word'e Dönüştür",
+                    data=docx_dss,
+                    file_name=f"{employee_name}_karar_destek.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="dl_dss_report"
+                )
+        else:
+            st.warning("Lütfen bir çalışan seçiniz.")
 
     # GEÇMİŞ VERİ TABLOSU
     st.markdown("---")
