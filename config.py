@@ -3,9 +3,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Veri dizini yoksa oluştur
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'guncel_veriler')
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
+
 class Config:
     # Dosya Yolları
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = os.path.join(BASE_DIR, 'guncel_veriler')
     CHROMA_DB_PATH = os.environ.get('CHROMA_DB_PATH', os.path.join(BASE_DIR, 'chroma_db'))
     

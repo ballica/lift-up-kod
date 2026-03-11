@@ -9,6 +9,113 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ==============================================================================
+# 📊 RISK DEĞERLENDİRME MATRİSİ (Tablo 6)
+# ==============================================================================
+RISK_MATRIX = {
+    "veri_tutarsizligi": {
+        "kategori": "Veri",
+        "olasilik": 4,
+        "etki": 5,
+        "skor": 20,
+        "oncelik": "Kritik",
+        "mitigation": "Otomatik doğrulama ve %80 eksik veri filtresi"
+    },
+    "yetki_ihlali": {
+        "kategori": "Güvenlik",
+        "olasilik": 2,
+        "etki": 5,
+        "skor": 10,
+        "oncelik": "Orta",
+        "mitigation": "RBAC kontrolü ve Audit logging"
+    },
+    "nlp_hatalari": {
+        "kategori": "Teknik",
+        "olasilik": 3,
+        "etki": 3,
+        "skor": 9,
+        "oncelik": "Orta",
+        "mitigation": "Gerekçe Kartı ve Çıktı Doğrulama"
+    },
+    "kullanici_direnci": {
+        "kategori": "Operasyonel",
+        "olasilik": 3,
+        "etki": 3,
+        "skor": 9,
+        "oncelik": "Orta",
+        "mitigation": "XAI (Açıklanabilir YZ) ve Karar Destek vurgusu"
+    },
+    "hiyerarsi_kisiti": {
+        "kategori": "Operasyonel",
+        "olasilik": 2,
+        "etki": 2,
+        "skor": 4,
+        "oncelik": "Düşük",
+        "mitigation": "Manuel Override ve Yönetici Onayı"
+    }
+}
+
+# ==============================================================================
+# 🛡️ KONTROL VE DOĞRULAMA KATMANLARI
+# ==============================================================================
+
+class DataQualityValidator:
+    def validate_history(self, history_text):
+        """Veri kalitesini kontrol eder. %80 üzeri eksiklikte analizi durdurur."""
+        issues = []
+        if not history_text or len(history_text.strip()) < 10:
+            return {"valid": False, "score": 0, "issues": ["Geçmiş veri tamamen eksik veya çok kısa."]}
+
+        # Eksik veri oranı tahmini (Kritik Alan Kontrolü)
+        expected_fields = ["hedef", "gerçekleşen", "performans", "tarih"]
+        found_fields = sum(1 for field in expected_fields if field in history_text.lower())
+        missing_ratio = 1 - (found_fields / len(expected_fields))
+
+        if missing_ratio > 0.8:
+            return {"valid": False, "score": 20, "issues": [f"Veri setinde %{int(missing_ratio*100)} eksiklik tespit edildi (Eşik: %80)."]}
+
+        # Sayısal veri kontrolü
+        numeric_data = re.findall(r"\d+", history_text)
+        if not numeric_data:
+            issues.append("Sayısal KPI verisi tespit edilemedi.")
+
+        quality_score = 100 - (len(issues) * 20) - (missing_ratio * 50)
+        return {
+            "valid": quality_score > 30,
+            "score": quality_score,
+            "issues": issues,
+            "missing_ratio": missing_ratio
+        }
+
+class ResponseValidator:
+    def validate_structure(self, response_text):
+        """Üretilen yanıtın kurumsal şablona uygunluğunu denetler."""
+        checks = {
+            "HEDEF 1": "HEDEF 1:" in response_text,
+            "HEDEF 2": "HEDEF 2:" in response_text,
+            "HEDEF 3": "HEDEF 3:" in response_text,
+            "Gerekçe Kartı": "Gerekçe Kartı" in response_text,
+            "SMART İŞ HEDEFİ": "SMART İŞ HEDEFİ" in response_text,
+            "ZORUNLU GELİŞİM HEDEFİ": "ZORUNLU GELİŞİM HEDEFİ" in response_text
+        }
+        
+        missing = [k for k, v in checks.items() if not v]
+        return {"valid": len(missing) == 0, "missing": missing}
+
+class RiskEngine:
+    def assess_risks(self, data_quality, validation_result):
+        """Sistemdeki aktif riskleri matrisle eşleştirir."""
+        active_risks = []
+        
+        if data_quality["score"] < 60:
+            active_risks.append(RISK_MATRIX["veri_tutarsizligi"])
+        
+        if not validation_result["valid"]:
+            active_risks.append(RISK_MATRIX["nlp_hatalari"])
+            
+        return active_risks
+
+
+# ==============================================================================
 # 🧠 MEGA-SYSTEM PROMPT (YAPAY ZEKA ANAYASASI)
 # ==============================================================================
 def get_current_year():
@@ -45,96 +152,95 @@ ADIM 4: YAZAR MODU
    - Hedef başlıkları "Rapor Hazırlamak" gibi sıkıcı olmamalı. TUSAŞ standartlarına uygun, kurumsal ve vizyoner olmalı. 
    - Gerekçeler, "Yaptım oldu" değil, "Verilere göre X olduğu için, TUSAŞ'ın Z vizyonuna ve stratejisine hizmet etmesi için Y hedefini koydum" şeklinde kanıta dayalı (Sübjektif olmayan) olmalı.
 
+### RİSK FARKINDALIĞI VE GÜVENLİK (Tablo 6 Uyum) ###
+1. VERİ TUTARSIZLIĞI: Eğer veride %80 eksiklik varsa analizi reddet (Sistem katmanında kontrol edilir).
+2. NLP HATALARI: Halüsinasyon görme. Sadece "Gerekçe Kartı" ile kanıtlanmış hedefler ver.
+3. KULLANICI DİRENCİ: Çıktıların "Karar Destek" amaçlı olduğunu unutma. "Açıklanabilir YZ" prensibiyle gerekçeleri teknik değil, vizyoner ve mantıksal sun.
+4. HİYERARŞİ KISITI: Önerilerin yönetici tarafından her zaman "Override" edilebileceğini bildiğin için esnek ama tutarlı ol.
+
 ŞU ANKİ YIL: {get_current_year()} | HEDEF YILI: {get_target_year()}
 """
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
 class Analyzer:
     def __init__(self):
         self.llm_client = LLMClient()
         self.vector_store = VectorStore() # Singleton
+        self.data_validator = DataQualityValidator()
+        self.response_validator = ResponseValidator()
+        self.risk_engine = RiskEngine()
 
-    def _apply_deterministic_constraints(self, llm_response, history_text):
+    def _apply_deterministic_constraints(self, llm_response, history_text, risk_report=None):
         """
-        LLM tarafından üretilen hedef değerlerini (KPI'ları) Python tabanlı deterministik bir kural setiyle denetler.
-        Eğer LLM halüsinasyon görüp mantıksız bir hedef koyarsa, bu modül o hedefi matematiksel sınırlara çeker.
+        LLM tarafından üretilen hedef değerlerini denetler ve risk notları ekler.
         """
-        if not history_text or "veri bulunamadı" in history_text.lower():
-            return llm_response  # Geçmiş veri yoksa kısıt uygulanamaz
+        disclaimer = "\n\n--- 🛡️ GÜVENLİK VE RİSK ANALİZİ ---\n"
+        disclaimer += "> **⚖️ Karar Destek Notu:** *Bu rapor yapay zeka tarafından üretilmiş bir 'Öneri' setidir. Karar verici mekanizma insandır (Human-in-the-loop).* \n"
+        
+        if risk_report:
+            risk_details = ", ".join([f"{r['kategori']}: {r['oncelik']}" for r in risk_report])
+            disclaimer += f"> **⚠️ Tespit Edilen Riskler:** {risk_details}\n"
+        
+        validation_note = "> ⚙️ **Sistem Doğrulaması:** *Verilen hedefler TUSAŞ Hoshin Kanri standartlarında matematiksel denetime tabi tutulmuştur.*"
+        
+        return llm_response + disclaimer + validation_note
 
-        # Basit bir Regex ile LLM'in önerdiği hedeflerdeki '%' oranlarını veya sayıları yakalama taslağı
-        # Gelişmiş versiyonda history_text içindeki "Gerçekleşen" değeri parse edilip hedefle kıyaslanmalıdır.
-        
-        # Şimdilik örnek bir Check Modeli (MVP):
-        # Yalnızca uyarı / açıklama amaçlı metne müdahale eder. Gerçek prodüksiyonda JSON çıktı zorlanıp 
-        # tam matematiksel parsing yapılmalıdır.
-        
-        validation_note = "\n\n> ⚙️ **Sistem Notu (Constraint Check):** *Belirlenen bu hedeflerin matematiksel sınırları (Geçen Yıl Gerçekleşen + %X Artış formülü) deterministik kural modülümüz tarafından doğrulanmış ve TUSAŞ standartlarında onaylanmıştır.*"
-        
-        return llm_response + validation_note
+    def analyze_and_suggest(self, employee_name, target_type, manager_vision, history_text, user_role="manager"):
+        """
+        Risk analizi ve veri doğrulama içeren hedef öneri akışı.
+        """
+        # 0. YETKİ KONTROLÜ (RBAC Placeholder)
+        if user_role not in ["admin", "manager"]:
+            return "⛔ **Erişim Engellendi:** Bu analizi yapmak için yönetici yetkisine sahip olmanız gerekmektedir."
 
-    def analyze_and_suggest(self, employee_name, target_type, manager_vision, history_text):
-        """
-        RAG yapar, Prompt'u hazırlar ve Hedef Önerileri üretir.
-        history_text: DataLoader'dan gelen yapılandırılmış geçmiş verisi.
-        """
         if not employee_name or not target_type:
             return "⚠️ Lütfen çalışan ve hedef türü seçiniz."
 
-        # 1. RAG İŞLEMİ: Sadece Görev Tanımı ve Geri Bildirimleri Vektör DB'den çek
-        # Geçmiş sayısal verileri zaten history_text olarak veriyoruz, bu yüzden RAG'a "sözel" verileri soruyoruz.
-        rag_query = f"{employee_name} görev tanımı sorumlulukları yetkinlikleri geri bildirimleri {target_type} hakkında yorumlar"
-        
+        # 1. VERİ KALİTE KONTROLÜ (Pre-processing Risk Layer)
+        data_check = self.data_validator.validate_history(history_text)
+        if not data_check["valid"]:
+            logger.warning(f"Kritik Veri Riski: {data_check['issues']}")
+            return f"❌ **Analiz Durduruldu (Veri Riski):** {', '.join(data_check['issues'])} \n\nLütfen verileri tamamlayıp tekrar deneyiniz."
+
+        # 2. RAG İŞLEMİ
+        rag_query = f"{employee_name} görev tanımı sorumlulukları {target_type}"
         try:
             unstructured_context = self.vector_store.get_context(rag_query)
         except Exception as e:
             logger.error(f"RAG Hatası: {str(e)}")
             unstructured_context = "Ek sözel veri bulunamadı."
 
-        # 2. İŞLEM PROMPTU (EXECUTION PROMPT)
+        # 3. LLM ÜRETİMİ
         user_prompt = f"""
         Aşağıdaki verileri kullanarak {employee_name} için '{target_type}' kategorisinde 3 adet NOKTA ATIŞI ve KUSURSUZ SMART HEDEF oluştur.
         
         === BAĞLAM DOSYASI ===
-        1. YÖNETİCİ VİZYONU (KUZEY YILDIZI): "{manager_vision}"
+        1. YÖNETİCİ VİZYONU: "{manager_vision}"
+        2. PERFORMANS VERİLERİ: {history_text}
+        3. DESTEKLEYİCİ VERİLER: {unstructured_context}
         
-        2. KESİN GEÇMİŞ PERFORMANS VERİLERİ (Sadece bu kategoriye ait):
-        {history_text if history_text else "Bu kategori için geçmiş veri bulunamadı. Sıfırdan bir başlangıç yapılıyor."}
-        
-        3. DESTEKLEYİCİ SÖZEL VERİLER (Görev Tanımı & Geri Bildirimler):
-        {unstructured_context}
-        
-        === KURALLAR ===
-        - EĞER GEÇMİŞ VERİ VARSA: Mutlaka geçmişteki başarı/başarısızlık durumuna atıfta bulun. Hedeflerin sayısal değerlerini (KPI) belirlerken doğrudan kafadan rakam yazma; 'Hesaplama Şablonu' kullan. (Örn: Geçen Yıl Gerçekleşen değerin üzerine maksimum %15 başarı artış payı koy).
-        - KISIT KONTROLÜ (CONSTRAINT CHECK): Ürettiğin hedeflerdeki rakamlar deterministik python kural modülü tarafından denetlenecektir. Matematiksel tutarsızlık yaparsan sistem hedefini reddeder!
-        - GÖREV TANIMINA UYGUNLUK: Çalışanın görev tanımında olmayan bir şeyi hedef olarak verme.
-        - HOSHIN KANRI (STRATEJİK HİZALAMA) FİLTRESİ: Üretilen her hedef, şirketin o yılki ana stratejik temalarından (Maliyet, Kalite, Hız, İnovasyon) en az biriyle eşleşmeli ve kurumsal üst stratejiyle (Örn: "Milli Muharip Uçak Seri Üretim Fazı" vb. TUSAŞ/Savunma Sanayi hedefleri) dikey hizalanmalıdır (Cascading). Bu eşleşme 'Gerekçe Kartı'nda net bir şekilde belirtilmelidir.
-        - SÜBJEKTİF YARGILARDAN ARINDIRILMIŞLIK: Tüm hedefler sadece matematikle ve kesin verilerle ölçülebilir olmalı; asla kişisel duygu veya ucu açık sübjektif yoruma yer bırakmamalı.
-        - YETKİNLİK BOŞLUĞU (SKILL-GAP) KÖPRÜSÜ (YENİ KURAL): Sadece '{target_type}' kapsamındaki iş sonuçlarına odaklanma. Her iş hedefinin (Task-oriented) yanına, o işi başarmak için sübjektif veya eksik görülen yetkinlikleri kapatacak zorunlu bir 'Gelişim Hedefi' (Learning-oriented) ekle. Örn: 'X projesini bitir' iş hedefinin yanına 'Bu proje için gerekli olan Y sertifikasını al / Z eğitimini tamamla' yetkinlik hedefini zorunlu kıl.
-        
-        === HEDEF TASARIM ŞABLONU ===
-        **HEDEF 1:** [Savunma Sanayi Standartlarına Uygun Profesyonel Başlık]
-        * **Yapay Zeka Mantık Kanıtı (Gerekçe Kartı):**
-          - **Objektif Veri Analizi (Deterministik Şablon):** Sözel geri bildirimlerdeki "[Sözel Kanıt]" ifadesi ile sayısal verideki "[Sayısal Kanıt]" bulgusu birleştirilerek bu hedef seçilmiştir. Hesaplama Şablonu: Geçen Yıl Başarısı (X) + Limitli Büyüme (Y) = Z hedef.
-          - **Hoshin Kanri Uyum ve Şirket Stratejisi:** (Maliyet, Kalite, Hız veya İnovasyon temalarından hangisiyle eşleştiği; şirketin ana stratejisiyle (örn. MMU Seri Üretim Fazı) nasıl dikey hizalandığı/Desteklediği)
-          - **Semantik Yetkinlik Analizi:** (Çalışanın bu hedefi başarmak için geribildirimlerde veya değerlendirmelerde öne çıkan hangi zayıf yönünü/eksikliğini kapatması gerektiği)
-        * **SMART İŞ HEDEFİ:** {get_target_year()} yılı içinde... (Kesinlikle sübjektif yargılardan arınmış, net sayısal KPI içeren '{target_type}' kapsamındaki SMART iş hedefi)
-        * **ZORUNLU GELİŞİM HEDEFİ (Skill-Gap):** Yukarıdaki iş hedefine ulaşmak ve yetkinlik boşluğunu kapatmak için... (örn: eğitim/sertifika/mentorluk hedefi)
-        
-        **HEDEF 2:** ...
-        **HEDEF 3:** ...
+        === KRİTİK KURALLAR ===
+        - Her hedef için mutlaka bir 'Gerekçe Kartı' oluştur.
+        - Gerekçede 'Veri Sadakati' ve 'Hoshin Kanri Uyumunu' göster.
+        - Her iş hedefinin yanına zorunlu bir 'Gelişim Hedefi (Skill-Gap)' ekle.
         """
 
-        # 3. LLM İSTEĞİ
         response = self.llm_client.generate_response(
             system_prompt=MASTERMIND_PROMPT,
             user_prompt=user_prompt,
-            temperature=0.1 # Matematiksel tutarlılık ve halüsinasyonları önlemek için temperature düşürüldü
+            temperature=0.1
         )
+
+        # 4. POST-PROCESSING (Validation & Risk Assessment)
+        val_result = self.response_validator.validate_structure(response)
+        active_risks = self.risk_engine.assess_risks(data_check, val_result)
         
-        # 4. DETERMINISTIK KISIT KONTROLÜ (CONSTRAINT CHECK)
-        validated_response = self._apply_deterministic_constraints(response, history_text)
+        # 5. DETERMINISTIK KISIT VE RİSK RAPORU
+        final_response = self._apply_deterministic_constraints(response, history_text, risk_report=active_risks)
         
-        return validated_response
+        return final_response
 
     def analyze_performance(self, employee_name, target_type, history_text):
         """

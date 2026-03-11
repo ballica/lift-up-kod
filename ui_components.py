@@ -43,6 +43,23 @@ def load_custom_css():
             background-color: #1e40af;
         }
 
+        /* 📄 Word İndirme Butonu Özelleştirme */
+        div.stDownloadButton > button {
+            background-color: #ffffff !important;
+            color: #2b579a !important; /* Word Brand Blue */
+            border: 1px solid #2b579a !important;
+            border-radius: 8px !important;
+            font-weight: 600 !important;
+            padding: 0.5rem 1rem !important;
+            transition: all 0.3s ease !important;
+        }
+
+        div.stDownloadButton > button:hover {
+            background-color: #2b579a !important;
+            color: white !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+        }
+
         /* İkincil Buton (Verileri Yenile vs.) */
         button[type="secondary"] {
             background-color: #ffffff;

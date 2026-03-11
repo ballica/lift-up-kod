@@ -4,6 +4,7 @@ from config import Config
 from ui_components import load_custom_css, render_header
 from analysis import Analyzer
 from data_loader import DataLoader
+from utils import generate_docx
 import os
 
 # Sayfa Ayarları (En başta olmalı)
@@ -33,13 +34,20 @@ def load_metadata_cached():
 @st.cache_data(ttl=600)
 def load_history_cached(name, target):
     """Geçmiş verileri önbelleğe alır."""
-    loader = DataLoader() # DataLoader hafif olduğu için burada tekrar instance alınabilir
-    return loader.get_employee_history(name, target)
+    try:
+        loader = DataLoader()
+        return loader.get_employee_history(name, target)
+    except Exception as e:
+        return pd.DataFrame()
 
 # --- UYGULAMA MANTIĞI ---
 
 # Analyzer'ı al (Cached Resource)
-analyzer = get_analyzer()
+try:
+    analyzer = get_analyzer()
+except Exception as e:
+    st.error(f"❌ Sistem başlatılamadı: {e}")
+    st.stop()
 
 # Session State Başlatma
 if "chat_history" not in st.session_state:
@@ -113,9 +121,13 @@ with main_col1:
             else:
                 with st.spinner("🤖 Geçmiş veriler ve görev tanımları taranıyor..."):
                     try:
-                        # Geçmiş veriyi çek ve metne çevir (Markdown tablosu olarak)
+                        # Geçmiş veriyi çek ve metne çevir
                         history_df = load_history_cached(employee_name, target_type)
-                        history_text = history_df.to_markdown(index=False) if not history_df.empty else ""
+                        try:
+                            history_text = history_df.to_markdown(index=False) if not history_df.empty else ""
+                        except Exception:
+                            # Tabulate yoksa veya hata verirse CSV formatına dön
+                            history_text = history_df.to_csv(index=False) if not history_df.empty else ""
 
                         # Metadata Çek ve Ekle
                         loader = DataLoader() # Cachelenmemiş taze veri için
@@ -145,6 +157,16 @@ with main_col1:
         if st.session_state.last_analysis:
             with st.expander("📝 Oluşturulan Hedefler", expanded=True):
                 st.markdown(st.session_state.last_analysis)
+                
+                # Word İndirme Butonu
+                docx_analysis = generate_docx(st.session_state.last_analysis, title=f"{employee_name} - Hedef Öneri Raporu")
+                st.download_button(
+                    label="📝 Word'e Dönüştür",
+                    data=docx_analysis,
+                    file_name=f"{employee_name}_hedef_onerileri.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="dl_main_analysis"
+                )
     
     # --- SEKME 2: PERFORMANS ANALİZİ ---
     with tab2:
@@ -180,6 +202,16 @@ with main_col1:
         
         if "performance_analysis" in st.session_state:
              st.markdown(st.session_state.performance_analysis)
+             
+             # Word İndirme Butonu
+             docx_perf = generate_docx(st.session_state.performance_analysis, title=f"{employee_name} - Performans Analizi")
+             st.download_button(
+                 label="📊 Analizi Word'e Dönüştür",
+                 data=docx_perf,
+                 file_name=f"{employee_name}_performans_analizi.docx",
+                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                 key="dl_perf_analysis"
+             )
 
     # GEÇMİŞ VERİ TABLOSU
     st.markdown("---")
@@ -208,9 +240,20 @@ with main_col2:
             </div>
             """, unsafe_allow_html=True)
             
-        for role, msg in st.session_state.chat_history:
-            with st.chat_message("user" if role == "Kullanıcı" else "ai", avatar="👤" if role == "Kullanıcı" else "🤖"):
+        for i, (role, msg) in enumerate(st.session_state.chat_history):
+            is_user = role == "Kullanıcı"
+            with st.chat_message("user" if is_user else "ai", avatar="👤" if is_user else "🤖"):
                 st.markdown(msg)
+                if not is_user:
+                    # Her asistan mesajı için Word butonu
+                    docx_msg = generate_docx(msg, title="Asistan Yanıtı")
+                    st.download_button(
+                        label="📄 Word'e Dönüştür",
+                        data=docx_msg,
+                        file_name=f"asistan_yaniti_{i}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key=f"dl_chat_{i}"
+                    )
 
     # Yeni Mesaj Girişi
     if prompt := st.chat_input("Sohbete devam etmek ister misiniz?"):
