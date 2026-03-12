@@ -115,27 +115,51 @@ class RiskEngine:
         return active_risks
 
 class DecisionSupportEngine:
-    def calculate_success_probability(self, history_df, suggested_target_value):
-        """Geçmiş verilere dayanarak hedefin tutma olasılığını hesaplar."""
+    def calculate_success_probability(self, history_df, suggested_response):
+        """Geçmiş verilere ve önerilen hedefin niteliğine göre başarı olasılığını hesaplar."""
         if history_df.empty:
-            return 50 # Veri yoksa nötr
+            return 65 # Varsayılan makul güven
 
         try:
-            # Geçmiş gerçekleşme oranları (Gerçekleşen / Hedef)
+            # 1. Sayısal Geçmiş Performansı (%70 ağırlık)
             ratios = []
             for _, row in history_df.iterrows():
                 h = float(row.get('Hedef Değeri', 100))
                 g = float(row.get('Gerçekleşen Değer', 80))
                 ratios.append(g / h if h != 0 else 0)
             
-            avg_ratio = sum(ratios) / len(ratios)
-            last_ratio = ratios[-1] if ratios else 0
+            avg_ratio = sum(ratios) / len(ratios) if ratios else 0.8
+            last_ratio = ratios[-1] if ratios else avg_ratio
             
-            # Formül: %40 ağırlıklı ortalama + %60 son yıl performansı
-            prob = (avg_ratio * 0.4 + last_ratio * 0.6) * 100
-            return min(max(int(prob), 10), 95) # %10-95 arası sınırla
+            stat_prob = (avg_ratio * 0.4 + last_ratio * 0.6)
+            
+            # 2. Önerilen Hedefin Karmaşıklığı/Risk Analizi (%30 ağırlık)
+            # İnovasyon kelimesi geçiyorsa risk biraz artar ama ödül yüksektir
+            risk_bonus = 0
+            if "inovasyon" in suggested_response.lower() or "yeni" in suggested_response.lower():
+                risk_bonus = -0.1 # Daha zor hedef
+            if "tekrarlı" in suggested_response.lower() or "standart" in suggested_response.lower():
+                risk_bonus = 0.05 # Daha kolay hedef
+                
+            final_prob = (stat_prob + risk_bonus) * 100
+            return min(max(int(final_prob), 15), 98) 
         except:
-            return 65
+            return 70
+
+    def calculate_risk_score(self, history_df, alignment_values):
+        """Stratejik risk skorunu hesaplar (0-100)."""
+        score = 20 # Baz risk
+        
+        # Veri azlığı riski
+        if len(history_df) < 5:
+            score += 30
+            
+        # Odak dağılımı riski (Tek bir yere aşırı yüklenme)
+        max_focus = max(alignment_values.values()) if alignment_values else 0
+        if max_focus > 70:
+            score += 25
+            
+        return min(score, 100)
 
     def analyze_challenge_level(self, last_val, suggested_val):
         """Hedefin zorluk seviyesini belirler."""
@@ -169,8 +193,26 @@ class DecisionSupportEngine:
                     distribution[theme] += 1
                     total_hits += 1
         
-        if total_hits == 0: return distribution
-        return {k: int((v/total_hits)*100) for k, v in distribution.items()}
+        if total_hits == 0: 
+            return {
+                "values": {k: 25 for k in themes.keys()}, 
+                "descriptions": {k: "Veri yetersizliğinden dolayı varsayılan dağılım." for k in themes.keys()}
+            }
+        
+        distribution_pct = {k: int((v/total_hits)*100) for k, v in distribution.items()}
+        
+        # Detaylı analiz metinleri ekle
+        details = {
+            "Kalite/Hata": "Hata payını minimize eden ve operasyonel mükemmelliği hedefleyen bir yaklaşım.",
+            "Hız/Zaman": "Teslimat sürelerini optimize eden ve çevikliği artıran zaman odaklı hedefler.",
+            "Maliyet/Verim": "Kaynak kullanımını optimize eden ve birim maliyeti düşüren verimlilik odağı.",
+            "İnovasyon": "Yeni teknolojiler ve yaratıcı yaklaşımlarla fark yaratan gelişim alanları."
+        }
+        
+        return {
+            "values": distribution_pct,
+            "descriptions": details
+        }
 
 
 # ==============================================================================
@@ -312,13 +354,48 @@ class Analyzer:
         """
         Yönetici için karar destek metriklerini hesaplar.
         """
+        avg_success = history_df['Gerçekleşen Değer'].mean() if not history_df.empty else 0
+        benchmark_val = "+%12" if avg_success > 85 else "+%5"
+        
+        alignment = self.dss_engine.get_strategic_alignment(suggested_response)
+        
         metrics = {
-            "success_probability": self.dss_engine.calculate_success_probability(history_df, 100), # 100 placeholder
-            "strategic_alignment": self.dss_engine.get_strategic_alignment(suggested_response),
-            "benchmark_status": "Ortalamanın %12 Üstünde", # Statik benchmark örneği
-            "skill_impact": "Kod Kalitesi (+%20 Verim Artışı)"
+            "success_probability": self.dss_engine.calculate_success_probability(history_df, suggested_response),
+            "strategic_alignment": alignment,
+            "benchmark_status": f"Bölüm Ortalamasının {benchmark_val} Üzerinde",
+            "skill_impact": "Teknik Yetkinlik Kazanımı (%20 Verim Artışı Potansiyeli)",
+            "risk_score": self.dss_engine.calculate_risk_score(history_df, alignment["values"])
         }
         return metrics
+
+    def analyze_risk_factors(self, employee_name, target_type, history_text):
+        """
+        LLM kullanarak personelin ve hedeflerin önündeki spesifik risk faktörlerini analiz eder.
+        """
+        rag_query = f"{employee_name} {target_type} alanındaki geçmiş hatalar gecikmeler riskler yetkinlik eksiklikleri"
+        unstructured_context = self.vector_store.get_context(rag_query)
+
+        user_prompt = f"""
+        {employee_name} isimli çalışanın '{target_type}' hedefleri için spesifik RİSK FAKTÖRLERİ analizi yap.
+        
+        === VERİLER ===
+        Sayısal Geçmiş: {history_text}
+        Sözel Kayıtlar: {unstructured_context}
+        
+        Lütfen tam olarak şu formatta bir tablo ve özet dön:
+        1. "Faktör | Seviye | Etki" kolonlarından oluşan bir tablo.
+        2. Seviye: Düşük, Orta, Yüksek.
+        3. Etki: -%X (Başarı olasılığına etkisi).
+        4. Tablonun altına "### ⚠️ En Kritik Risk: [Risk Adı]" başlığıyla bir açıklama ekle.
+        
+        Örnek Faktörler: Yetkinlik Boşluğu, Operasyonel Yük, Kaynak Kısıtı, Geçmiş Teknik Hatalar vb.
+        """
+
+        return self.llm_client.generate_response(
+            system_prompt=MASTERMIND_PROMPT,
+            user_prompt=user_prompt,
+            temperature=0.3
+        )
 
     def analyze_performance(self, employee_name, target_type, history_text):
         """

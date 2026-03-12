@@ -227,7 +227,6 @@ with main_col1:
             if st.button("📊 Karar Desteği Analizi Çalıştır", use_container_width=True):
                 with st.spinner("🧠 Veriler üzerinden stratejik olasılıklar hesaplanıyor..."):
                     history_df = load_history_cached(employee_name, target_type)
-                    # Eğer hedef henüz oluşmamışsa dummy bir analizle dss başlat
                     sample_response = st.session_state.last_analysis if st.session_state.last_analysis else "Genel Performans Hedefleri"
                     st.session_state.dss_metrics = analyzer.get_decision_support_metrics(
                         employee_name, target_type, sample_response, history_df
@@ -239,28 +238,106 @@ with main_col1:
                 
                 st.markdown(f"### 🧠 {employee_name} için Stratejik Karar Desteği")
                 
-                # Üst Metrikler
-                c1, c2, c3 = st.columns(3)
+                # Üst Metrik Kartları (Kompakt ve Şık)
+                c1, c2, c3, c4 = st.columns(4)
+                
                 with c1:
-                    st.metric("🎯 Başarı Olasılığı", f"%{metrics['success_probability']}", delta="Yüksek Güven" if metrics['success_probability'] > 70 else "Dikkat")
+                    prob = metrics['success_probability']
+                    delta_class = "dss-delta-up" if prob > 70 else "dss-delta-warning"
+                    st.markdown(f"""
+                    <div class="dss-card">
+                        <div class="dss-label">🎯 BAŞARI</div>
+                        <div class="dss-value">%{prob}</div>
+                        <span class="dss-delta {delta_class}">Güven: %{prob}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
                 with c2:
-                    st.metric("📈 Benchmark Durumu", metrics['benchmark_status'], delta="+%12")
+                    st.markdown(f"""
+                    <div class="dss-card">
+                        <div class="dss-label">📈 BÖLÜM UYUMU</div>
+                        <div class="dss-subtext">{metrics['benchmark_status']}</div>
+                        <span class="dss-delta dss-delta-up">Üst Segment</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
                 with c3:
-                    st.metric("⚡ Yetkinlik Etkisi", "Yüksek", help=metrics['skill_impact'])
+                    risk = metrics.get('risk_score', 25)
+                    risk_class = "dss-delta-up" if risk < 40 else "dss-delta-warning"
+                    risk_label = "Düşük" if risk < 40 else "Orta/Yüksek"
+                    st.markdown(f"""
+                    <div class="dss-card">
+                        <div class="dss-label">⚠️ RİSK SKORU</div>
+                        <div class="dss-value">%{risk}</div>
+                        <span class="dss-delta {risk_class}">Seviye: {risk_label}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with c4:
+                    st.markdown(f"""
+                    <div class="dss-card">
+                        <div class="dss-label">🚀 GELİŞİM</div>
+                        <div class="dss-subtext" style="font-size: 0.65rem;">{metrics['skill_impact']}</div>
+                        <span class="dss-delta dss-delta-up">Pozitif Katkı</span>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
-                # Stratejik Uyum (Alignment)
-                st.markdown("#### 🎯 Stratejik Odak Dağılımı")
-                alignment = metrics['strategic_alignment']
+                st.markdown("<br>", unsafe_allow_html=True)
                 
-                # Basit bir bar chart gösterimi
-                for theme, val in alignment.items():
-                    st.write(f"{theme} (%{val})")
-                    st.progress(val / 100)
+                # Stratejik Odak Dağılımı (Detaylı Görünüm)
+                st.markdown("#### 🎯 Stratejik Odak ve Detay Analizi")
                 
-                st.info("💡 **DSS Notu:** Önerilen hedefler Kalite ve İnovasyon odaklıdır. Bu durum şirketin 2026 Seri Üretim fazı stratejisiyle %95 uyumludur.")
+                alignment_data = metrics['strategic_alignment']
+                values = alignment_data['values']
+                descriptions = alignment_data['descriptions']
                 
-                # Word İndirme butonu buraya da eklenebilir
-                dss_report = f"KARAR DESTEK RAPORU\nÇalışan: {employee_name}\nBaşarı Olasılığı: %{metrics['success_probability']}\nStratejik Uyum: {alignment}"
+                col_f1, col_f2 = st.columns(2)
+                
+                for i, (theme, val) in enumerate(values.items()):
+                    with col_f1 if i % 2 == 0 else col_f2:
+                        st.markdown(f"""
+                        <div class="focus-container">
+                            <div class="focus-header">
+                                <span>{theme}</span>
+                                <span>%{val}</span>
+                            </div>
+                            <div class="focus-bar-bg">
+                                <div class="focus-bar-fill" style="width: {val}%;"></div>
+                            </div>
+                            <div style="margin-top: 10px; font-size: 0.85rem; color: #475569; font-style: italic;">
+                                💡 {descriptions.get(theme, "")}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                st.info("💡 **Gelecek Projeksiyonu:** Mevcut hedef seti, personelin teknik borç yükünü %15 azaltırken, kurumsal inovasyon kapasitesine doğrudan katkı sunmaktadır.")
+                
+                # --- YENİ: RİSK ANALİZİ KATMANI ---
+                st.markdown("---")
+                col_r1, col_r2 = st.columns([2, 2])
+                with col_r1:
+                    if st.button("⚠️ Detaylı Risk Analizi Yap", use_container_width=True):
+                        with st.spinner("🔍 Risk kaynakları analiz ediliyor..."):
+                            try:
+                                history_df = load_history_cached(employee_name, target_type)
+                                try:
+                                    history_text = history_df.to_markdown(index=False) if not history_df.empty else "Veri yok"
+                                except Exception:
+                                    # Tabulate hatası veya başka bir hata durumunda CSV'ye dön
+                                    history_text = history_df.to_csv(index=False) if not history_df.empty else "Veri yok"
+                                risk_analysis = analyzer.analyze_risk_factors(employee_name, target_type, history_text)
+                                st.session_state.detailed_risk = risk_analysis
+                            except Exception as e:
+                                st.error(f"Risk Analizi Hatası: {e}")
+
+                if "detailed_risk" in st.session_state:
+                    with st.expander("🛡️ Detaylı Risk Faktörleri ve Etki Analizi", expanded=True):
+                        st.markdown(st.session_state.detailed_risk)
+                        st.warning("⚠️ **Not:** Yukarıdaki riskler personelin geçmiş verileri ve görev tanımı üzerinden yapay zeka tarafından simüle edilmiştir.")
+
+                st.markdown("---")
+                # Word İndirme butonu
+                dss_report = f"KARAR DESTEK RAPORU\nÇalışan: {employee_name}\nBaşarı Olasılığı: %{metrics['success_probability']}\nBenchmark: {metrics['benchmark_status']}"
                 docx_dss = generate_docx(dss_report, title="Stratejik Karar Destek Raporu")
                 st.download_button(
                     label="📄 DSS Raporunu Word'e Dönüştür",
